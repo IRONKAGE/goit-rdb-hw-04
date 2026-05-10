@@ -124,28 +124,45 @@ export function initSchemaInspector(containerId) {
 
     let engine = db_id.split('_')[1] || 'sql';
 
-    let metaSql = (engine === 'oracle')
-      ? `SELECT table_name, column_name, data_type, data_length, nullable FROM user_tab_columns ORDER BY table_name, column_id`
-      : `SELECT table_name, column_name, data_type, character_maximum_length, is_nullable FROM information_schema.columns WHERE table_schema NOT IN ('information_schema', 'pg_catalog', 'sys', 'dbo') ORDER BY table_name, ordinal_position;`;
+    // 1. Отримання колонок (Тільки для поточної бази!)
+    let metaSql = '';
+    if (engine === 'oracle') {
+      metaSql = `SELECT table_name, column_name, data_type, data_length, nullable FROM user_tab_columns ORDER BY table_name, column_id`;
+    } else if (engine === 'mysql') {
+      metaSql = `SELECT table_name, column_name, data_type, character_maximum_length, is_nullable FROM information_schema.columns WHERE table_schema = DATABASE() ORDER BY table_name, ordinal_position;`;
+    } else {
+      metaSql = `SELECT table_name, column_name, data_type, character_maximum_length, is_nullable FROM information_schema.columns WHERE table_schema NOT IN ('information_schema', 'pg_catalog', 'sys', 'dbo') ORDER BY table_name, ordinal_position;`;
+    }
 
+    // 2. Отримання FOREIGN KEYS
     let fkSql = '';
     if (engine === 'postgres' || engine === 'mssql') {
       fkSql = `SELECT tc.table_name, kcu.column_name, ccu.table_name AS foreign_table_name FROM information_schema.table_constraints AS tc JOIN information_schema.key_column_usage AS kcu ON tc.constraint_name = kcu.constraint_name AND tc.table_schema = kcu.table_schema JOIN information_schema.constraint_column_usage AS ccu ON ccu.constraint_name = tc.constraint_name AND ccu.table_schema = tc.table_schema WHERE tc.constraint_type = 'FOREIGN KEY';`;
     } else if (engine === 'mysql') {
-      fkSql = `SELECT table_name, column_name, referenced_table_name FROM information_schema.key_column_usage WHERE referenced_table_name IS NOT NULL AND table_schema NOT IN ('information_schema', 'mysql', 'performance_schema', 'sys');`;
+      fkSql = `SELECT table_name, column_name, referenced_table_name FROM information_schema.key_column_usage WHERE referenced_table_name IS NOT NULL AND table_schema = DATABASE();`;
     } else if (engine === 'oracle') {
       fkSql = `SELECT a.table_name, a.column_name, c_pk.table_name AS foreign_table_name FROM user_cons_columns a JOIN user_constraints c ON a.constraint_name = c.constraint_name JOIN user_constraints c_pk ON c.r_constraint_name = c_pk.constraint_name WHERE c.constraint_type = 'R';`;
     }
 
+    // 3. Отримання PRIMARY та UNIQUE KEYS
     let pkUkSql = '';
-    if (engine === 'postgres' || engine === 'mysql' || engine === 'mssql') {
+    if (engine === 'postgres' || engine === 'mssql') {
       pkUkSql = `
             SELECT tc.table_name, kcu.column_name, tc.constraint_type
             FROM information_schema.table_constraints tc
             JOIN information_schema.key_column_usage kcu
               ON tc.constraint_name = kcu.constraint_name AND tc.table_schema = kcu.table_schema
             WHERE tc.constraint_type IN ('PRIMARY KEY', 'UNIQUE')
-              AND tc.table_schema NOT IN ('information_schema', 'pg_catalog', 'mysql', 'performance_schema', 'sys');
+              AND tc.table_schema NOT IN ('information_schema', 'pg_catalog', 'sys', 'dbo');
+        `;
+    } else if (engine === 'mysql') {
+      pkUkSql = `
+            SELECT tc.table_name, kcu.column_name, tc.constraint_type
+            FROM information_schema.table_constraints tc
+            JOIN information_schema.key_column_usage kcu
+              ON tc.constraint_name = kcu.constraint_name AND tc.table_schema = kcu.table_schema
+            WHERE tc.constraint_type IN ('PRIMARY KEY', 'UNIQUE')
+              AND tc.table_schema = DATABASE();
         `;
     } else if (engine === 'oracle') {
       pkUkSql = `

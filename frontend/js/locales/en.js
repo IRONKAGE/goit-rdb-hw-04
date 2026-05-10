@@ -14,10 +14,17 @@ export default {
   lang_changed: "Interface language changed to English",
 
   // Query Editor
+  qe_file_missing: "File",
+  qe_missing: "is missing",
+  qe_load_error: "Error loading",
+  qe_new_query: "New query",
+  qe_close_tab: "Close (Middle Click)",
+  qe_new_tab_tip: "New query (Dbl-Click on panel)",
   qe_clear: "Clear script",
   log_cleared: "> Editor cleared.",
   qe_god_mode: "GOD MODE",
   qe_god_mode_tip: "Ignores current table data and executes the query directly on the core.",
+  qe_step_tab: "Step",
   qe_import: "📥 IMPORT SQL",
   qe_export: "📤 EXPORT SQL",
   qe_execute: "⚡ EXECUTE SQL",

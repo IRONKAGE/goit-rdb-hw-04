@@ -1,4 +1,7 @@
 import docker, json, os, random, sys, re, time, threading, itertools, socket, tarfile, io
+from dotenv import load_dotenv
+
+load_dotenv()
 
 client = docker.from_env()
 CONFIG_FILE = "databases.json"
@@ -32,25 +35,49 @@ def add_db(engine, version="latest"):
 
     db_id = f"rdb_{engine}_{random.randint(1000, 9999)}"
     cfg = load_cfg()
+    post_init_cmd = None
 
     if engine == "postgres":
         img, port = f"postgres:{version}-alpine", random.randint(5433, 5499)
-        usr, pwd, dbn = "admin", "secret", "stand_db"
+        usr = os.getenv("PG_USER", "admin")
+        pwd = os.getenv("PG_PASS", "secret")
+        dbn = os.getenv("PG_DB", "stand_db")
+
         env = [f"POSTGRES_USER={usr}", f"POSTGRES_PASSWORD={pwd}", f"POSTGRES_DB={dbn}"]
         url = f"postgresql://{usr}:{pwd}@{db_id}:5432/{dbn}"
         hc = {"test": ["CMD-SHELL", f"pg_isready -U {usr} -d {dbn}"], "interval": 10000000000, "timeout": 5000000000, "retries": 5, "start_period": 10000000000}
+
     elif engine == "mysql":
         img, port = f"mysql:{version}", random.randint(3307, 3399)
-        usr, pwd, dbn = "admin", "secret", "stand_db"
-        env = [f"MYSQL_ROOT_PASSWORD={pwd}", f"MYSQL_DATABASE={dbn}", f"MYSQL_USER={usr}", f"MYSQL_PASSWORD={pwd}"]
+
+        # 💡 Читаємо ВСІ змінні правильно
+        usr = os.getenv("MYSQL_USER", "admin")
+        pwd = os.getenv("MYSQL_PASS", "secret")
+        root_pwd = os.getenv("MYSQL_ROOT_PASS", "secret")
+        dbn = os.getenv("MYSQL_DB", "stand_db")
+
+        # 💡 Наказуємо Docker створити користувача
+        env = [
+            f"MYSQL_ROOT_PASSWORD={root_pwd}",
+            f"MYSQL_DATABASE={dbn}",
+            f"MYSQL_USER={usr}",
+            f"MYSQL_PASSWORD={pwd}"
+        ]
         url = f"mysql+pymysql://{usr}:{pwd}@{db_id}:3306/{dbn}"
-        hc = {"test": ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", usr, f"-p{pwd}"], "interval": 10000000000, "timeout": 5000000000, "retries": 5, "start_period": 15000000000}
+
+        # Healthcheck робимо через root, щоб було надійно
+        hc = {"test": ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", f"-p{root_pwd}"], "interval": 10000000000, "timeout": 5000000000, "retries": 5, "start_period": 15000000000}
+
+        # 💡 Команда, яка виконається ПІСЛЯ запуску, щоб дати права
+        post_init_cmd = f"sh -c \"mysql -u root -p{root_pwd} -e \\\"GRANT ALL PRIVILEGES ON *.* TO '{usr}'@'%'; FLUSH PRIVILEGES;\\\"\""
+
     elif engine == "oracle":
         img, port = f"gvenzl/oracle-free:{version}", random.randint(1522, 1599)
         usr, pwd, dbn = "admin", "secret", "freepdb1"
         env = [f"ORACLE_PASSWORD={pwd}", f"APP_USER={usr}", f"APP_PASSWORD={pwd}"]
         url = f"oracle+oracledb://{usr}:{pwd}@{db_id}:1521/?service_name={dbn}"
         hc = {"test": ["CMD", "healthcheck.sh"], "interval": 15000000000, "timeout": 10000000000, "retries": 10, "start_period": 120000000000}
+
     elif engine == "mssql":
         img, port = f"mcr.microsoft.com/mssql/server:{version}", random.randint(1434, 1499)
         usr, pwd, dbn = "sa", "SuperSecret123!", "master"
@@ -96,6 +123,10 @@ def add_db(engine, version="latest"):
             health_status = c.attrs.get('State', {}).get('Health', {}).get('Status', 'starting')
             if health_status == 'healthy':
                 print(" ✅ ГОТОВО!")
+                # 💡 Виконуємо GRANT після того, як база ожила
+                if post_init_cmd:
+                    print(f" 🔑 Налаштування глобальних прав для {usr}...")
+                    c.exec_run(post_init_cmd)
                 break
             elif health_status == 'unhealthy':
                 print(" ❌ ПОМИЛКА (Unhealthy)!")
@@ -140,7 +171,12 @@ def dump_db(db_id):
         timestamp = time.strftime("%Y%m%d_%H%M%S")
         filename = f"backup_{db_id}_{timestamp}.sql"
 
-        cmd = f"pg_dump -U {usr} -d {dbn}" if engine == "postgres" else f"mysqldump -u {usr} -p{pwd} {dbn}"
+        # 💡 Дамп MySQL завжди робиться через root
+        if engine == "mysql":
+            root_pwd = os.getenv("MYSQL_ROOT_PASS", "super_secure_root_password")
+            cmd = f"mysqldump -u root -p{root_pwd} {dbn}"
+        else:
+            cmd = f"pg_dump -U {usr} -d {dbn}"
 
         is_working = True
         def spinner():
@@ -183,7 +219,11 @@ def restore_db(db_id, filename):
         tar_stream.seek(0)
         container.put_archive("/tmp", tar_stream)
 
-        cmd = f"psql -U {usr} -d {dbn} -f /tmp/backup_restore.sql" if engine == "postgres" else f"sh -c 'mysql -u {usr} -p{pwd} {dbn} < /tmp/backup_restore.sql'"
+        if engine == "mysql":
+            root_pass = os.getenv("MYSQL_ROOT_PASS", "super_secure_root_password")
+            cmd = f"sh -c 'mysql -u root -p{root_pass} {dbn} < /tmp/backup_restore.sql'"
+        else:
+            cmd = f"psql -U {usr} -d {dbn} -f /tmp/backup_restore.sql"
 
         is_working = True
         def spinner():

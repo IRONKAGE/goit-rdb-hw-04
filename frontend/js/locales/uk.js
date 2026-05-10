@@ -14,10 +14,17 @@ export default {
   lang_changed: "Мову інтерфейсу змінено на Українську",
 
   // Query Editor
+  qe_file_missing: "Файл",
+  qe_missing: "відсутній",
+  qe_load_error: "Помилка завантаження",
+  qe_new_query: "Новий запит",
+  qe_close_tab: "Закрити (Middle Click)",
+  qe_new_tab_tip: "Новий запит (Dbl-Click по панелі)",
   qe_clear: "Очистити запит",
   log_cleared: "> Редактор очищено.",
   qe_god_mode: "РЕЖИМ БОГА",
   qe_god_mode_tip: "Ігнорує поточні дані в таблиці і буде виконувати заданий запит напряму на ядрі.",
+  qe_step_tab: "Крок",
   qe_import: "📥 ІМПОРТ SQL",
   qe_export: "📤 ЕКСПОРТ SQL",
   qe_execute: "⚡ ВИКОНАТИ SQL",

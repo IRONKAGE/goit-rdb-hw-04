@@ -30,7 +30,7 @@ else
 endif
 
 # Оголошуємо ВСІ команди як не-файли (захист від конфліктів з папками)
-.PHONY: help ensure-docker start frontend backend down logs db-manage db-adminer db-add db-rm db-list db-dump db-restore build clean
+.PHONY: help ensure-docker start frontend backend down logs db-manage db-adminer db-add db-rm db-list db-dump db-restore update-libs build clean
 
 # ==========================================
 # БАЗОВІ ПЕРЕВІРКИ ТА СЕРЕДОВИЩЕ
@@ -56,7 +56,7 @@ start: backend ## Запустити ВЕСЬ проект (Backend + Frontend +
 	@$(OPEN_BROWSER)
 	@$(MAKE) frontend
 
-frontend: .venv ## Запустити тільки Frontend (через .venv)
+frontend: .venv update-libs ## Запустити тільки Frontend (через .venv)
 	@echo "$(GREEN)🌐 Запуск Frontend-сервера на порту $(PORT_BROWSER) через .venv... (Ctrl+C для зупинки)$(RESET)"
 	$(VENV_PYTHON) -m http.server $(PORT_BROWSER) --directory frontend --bind 127.0.0.1
 
@@ -98,8 +98,16 @@ db-dump: ensure-docker ## Зробити SQL-дамп БД (make db-dump id=rdb_
 db-restore: ensure-docker ## Відновити БД з дампу (make db-restore id=... file=...)
 	@if [ "$(id)" = "" ] || [ "$(file)" = "" ]; then echo "$(YELLOW)Вкажіть ID та файл: make db-restore id=... file=backup.sql$(RESET)"; else $(DB_MANAGER) restore $(id) $(file); fi
 
+##@ 🌍 Офлайн Залежності
+update-libs: .venv ## Завантажити сторонні JS-бібліотеки локально (для автономної роботи)
+	@echo "$(YELLOW)📥 Завантаження автономних бібліотек у libs/...$(RESET)"
+	@$(VENV_PYTHON) -c "import os; os.makedirs('frontend/js/libs', exist_ok=True)"
+	@curl -s -L -o frontend/js/libs/sql-formatter.min.js https://cdn.jsdelivr.net/npm/sql-formatter@15.3.2/dist/sql-formatter.min.js
+	@curl -s -L -o frontend/js/libs/html-to-image.min.js https://cdnjs.cloudflare.com/ajax/libs/html-to-image/1.11.13/html-to-image.min.js
+	@echo "$(GREEN)✅ Бібліотеки готові до офлайн-використання!$(RESET)"
+
 ##@ 📦 Утиліти
-build: .venv ## Зібрати весь проєкт в один HTML-файл для здачі (hw_submission.html)
+build: .venv update-libs ## Зібрати весь проєкт в один HTML-файл для здачі (hw_submission.html)
 	@echo "$(YELLOW)🏗️ Починаю збірку проєкту в єдиний файл...$(RESET)"
 	$(VENV_PYTHON) builder.py
 	@echo "$(GREEN)✅ Успішно! Згенеровано файл: hw_submission.html$(RESET)"
